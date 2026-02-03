@@ -3,7 +3,10 @@ name: Build (ROS2)
 on:
   push:
     branches:
+      - master
       - main
+      - 'fix/*'
+      - 'feature/*'
   pull_request:
 
 jobs:

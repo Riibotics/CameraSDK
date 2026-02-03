@@ -56,4 +56,4 @@ def generate_launch_description():
 			#<!-- Depth -->
 			{"lx_min_depth" : 0},
 			{"lx_max_depth" : 8000}])
-    ])
+    ]

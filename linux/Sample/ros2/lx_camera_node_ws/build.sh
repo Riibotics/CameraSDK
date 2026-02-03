@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 rm -rf build/ install/ log/
 
 # Ubuntu 22.04 amd64 + OpenMPI include paths

@@ -73,7 +73,7 @@ ros2 launch lx_camera_ros pallet.launch.py
 
 Launch files are copied during build. **Edit the source launch files** under:
 
-```
+```text
 linux/Sample/ros2/lx_camera_node_ws/src/lx_camera_ros/src/launch/ubuntu22/
 ```
 

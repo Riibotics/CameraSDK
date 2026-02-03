@@ -36,6 +36,7 @@
     #endif
 #endif
 #include <stdint.h>
+#include <stdbool.h>
 
 // Error type definitions
 typedef enum LX_STATE
