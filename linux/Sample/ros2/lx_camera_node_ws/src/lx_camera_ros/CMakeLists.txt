@@ -13,12 +13,8 @@ else()
 	SET(LAUNCH_DIR "${CMAKE_SOURCE_DIR}/src/launch/ubuntu22/")
 endif ()
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/pallet.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/mapping.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/localization.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/obstacle.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/obstacleV2.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/sensor_sim.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/localization.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/lx_camera_ros.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 
 if (NOT DEFINED CMAKE_SUPPRESS_DEVELOPER_WARNINGS)
@@ -95,23 +91,6 @@ target_link_libraries(${TARGET_NAME}
 					  "${cpp_typesupport_target}")
 install(TARGETS ${TARGET_NAME} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
 install(FILES ${LX_LIB_PATH}/libLxDataProcess.so ${LX_LIB_PATH}/libLxCameraApi.so DESTINATION lib/)
-
-set(TARGET_NAME lx_localization_node)
-add_executable(${TARGET_NAME}
-				${PROJECT_SOURCE_DIR}/src/lx_localization/lx_localization.cpp 
-				${PROJECT_SOURCE_DIR}/src/lx_localization/lx_localization_node.cpp 
-				${PROJECT_SOURCE_DIR}/src/utils/dynamic_link.cpp)
-ament_target_dependencies(${TARGET_NAME} ${dependencies})
-target_link_libraries(${TARGET_NAME} ${OpenCV_LIBS} )
-install(TARGETS ${TARGET_NAME} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
-
-set(TARGET_NAME sensor_sim_node)
-add_executable(${TARGET_NAME}
-				${PROJECT_SOURCE_DIR}/src/lx_localization/sensor_sim.cpp 
-				${PROJECT_SOURCE_DIR}/src/lx_localization/sensor_sim_node.cpp)
-ament_target_dependencies(${TARGET_NAME} ${dependencies})
-install(TARGETS ${TARGET_NAME} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
-
 
 install(DIRECTORY
 launch rviz
