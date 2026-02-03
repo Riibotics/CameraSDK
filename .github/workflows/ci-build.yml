@@ -76,6 +76,9 @@ jobs:
     name: ros-ci (fork)
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
     runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
       pull-requests: read
