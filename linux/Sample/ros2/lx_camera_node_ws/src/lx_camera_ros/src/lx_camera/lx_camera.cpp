@@ -162,6 +162,10 @@ LxCamera::LifecycleCBReturn
 LxCamera::on_configure(const rclcpp_lifecycle::State &) {
   RCLCPP_INFO(this->get_logger(), "on_configure()...");
   ReadParam();
+  if (!ConfigureDevice()) {
+    return LifecycleCBReturn::FAILURE;
+  }
+
   pub_rgb_ = this->create_publisher<sensor_msgs::msg::Image>("LxCamera_Rgb", 1);
   pub_rgb_info_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(
       "LxCamera_RgbInfo", 1);
@@ -200,9 +204,6 @@ LxCamera::on_configure(const rclcpp_lifecycle::State &) {
       "LxCamera_LxString",
       std::bind(&LxCamera::LxString, this, std::placeholders::_1,
                 std::placeholders::_2));
-  if (!ConfigureDevice()) {
-    return LifecycleCBReturn::FAILURE;
-  }
   return LifecycleCBReturn::SUCCESS;
 }
 

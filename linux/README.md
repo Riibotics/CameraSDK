@@ -47,7 +47,8 @@ cd Sample/ros2/lx_camera_node_ws
 ./build.sh
 ```
 
-`build.sh` expects OpenMPI headers at:
+`build.sh` uses OpenMPI include hints when available:
 - `/usr/lib/x86_64-linux-gnu/openmpi/include`
 
-If missing, install `libopenmpi-dev` or adjust include paths in `build.sh`.
+`libopenmpi-dev` is not a strict requirement for this package.
+Install it only if your build environment fails with `mpi.h`-related errors.

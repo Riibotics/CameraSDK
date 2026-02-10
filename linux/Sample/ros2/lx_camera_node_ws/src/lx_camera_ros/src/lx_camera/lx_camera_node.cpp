@@ -4,7 +4,7 @@
 int main(int argc, char **argv) {
   DcLib lib;
   if (!DynamicLink(&lib)) {
-    return 0;
+    return 1;
   }
   rclcpp::init(argc, argv);
   rclcpp::executors::SingleThreadedExecutor executor;
