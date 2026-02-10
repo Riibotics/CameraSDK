@@ -79,6 +79,10 @@ void LxCamera::UpdateDiagnostics(
   std::lock_guard<std::mutex> lock(diagnostic_mutex_);
   const auto now = std::chrono::steady_clock::now();
 
+  // Severity policy:
+  // - ERROR: camera is not open, or frame timeout exceeded.
+  // - WARN: stream not started yet, or waiting for first frame.
+  // - OK: frame stream is healthy within timeout window.
   if (!is_device_open_) {
     status.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
                    "Device is not open");
@@ -102,6 +106,7 @@ void LxCamera::UpdateDiagnostics(
     status.add("last_frame_age_ms", static_cast<int>(age_ms));
   }
 
+  // Keep raw state flags in diagnostics for quick triage.
   status.add("device_open", is_device_open_ ? 1 : 0);
   status.add("stream_started", is_start_ ? 1 : 0);
 }
@@ -387,7 +392,18 @@ void LxCamera::Run() {
   }
 
   rclcpp::Rate rate(20);
+  auto last_diag_force = std::chrono::steady_clock::now();
   while (rclcpp::ok() && run_worker_.load()) {
+    // Publish diagnostics periodically even if frame acquisition fails.
+    // This ensures stale/no-frame conditions are still reported.
+    if (diagnostic_updater_) {
+      const auto now_diag = std::chrono::steady_clock::now();
+      if (now_diag - last_diag_force >= std::chrono::seconds(1)) {
+        diagnostic_updater_->force_update();
+        last_diag_force = now_diag;
+      }
+    }
+
     FrameInfo *one_frame = nullptr;
     auto sret = DcSetCmd(handle_, LX_CMD_GET_NEW_FRAME);
     if ((LX_SUCCESS != sret) && (LX_E_FRAME_ID_NOT_MATCH != sret) &&
@@ -402,9 +418,6 @@ void LxCamera::Run() {
       std::lock_guard<std::mutex> lock(diagnostic_mutex_);
       has_frame_ = true;
       last_frame_time_ = std::chrono::steady_clock::now();
-    }
-    if (diagnostic_updater_) {
-      diagnostic_updater_->force_update();
     }
     rclcpp::Time now = this->get_clock()->now();
     float dep_fps = 0.0, amp_fps = 0.0, rgb_fps = 0.0, temp = 0.0;
