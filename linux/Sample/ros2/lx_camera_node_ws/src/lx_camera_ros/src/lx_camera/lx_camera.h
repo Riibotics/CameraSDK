@@ -10,7 +10,6 @@
 #include "diagnostic_updater/diagnostic_updater.hpp"
 #include "utils/dynamic_link.h"
 
-#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "image_transport/image_transport.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -90,8 +89,6 @@ private:
       pub_cloud_;
   rclcpp_lifecycle::LifecyclePublisher<lx_camera_ros::msg::FrameRate>::SharedPtr
       pub_temper_;
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
-      pub_location_;
   rclcpp_lifecycle::LifecyclePublisher<lx_camera_ros::msg::Obstacle>::SharedPtr
       pub_obstacle_;
   rclcpp_lifecycle::LifecyclePublisher<lx_camera_ros::msg::Pallet>::SharedPtr

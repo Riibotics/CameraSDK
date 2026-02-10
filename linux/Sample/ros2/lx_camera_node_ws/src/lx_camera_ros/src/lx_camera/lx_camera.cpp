@@ -54,7 +54,6 @@ void LxCamera::ActivatePublishers() {
   if (pub_obstacle_) pub_obstacle_->on_activate();
   if (pub_cloud_) pub_cloud_->on_activate();
   if (pub_tf_) pub_tf_->on_activate();
-  if (pub_location_) pub_location_->on_activate();
 }
 
 void LxCamera::DeactivatePublishers() {
@@ -68,7 +67,6 @@ void LxCamera::DeactivatePublishers() {
   if (pub_obstacle_) pub_obstacle_->on_deactivate();
   if (pub_cloud_) pub_cloud_->on_deactivate();
   if (pub_tf_) pub_tf_->on_deactivate();
-  if (pub_location_) pub_location_->on_deactivate();
 }
 
 void LxCamera::StopWorker() {
@@ -187,8 +185,6 @@ LxCamera::on_configure(const rclcpp_lifecycle::State &) {
       "LxCamera_Cloud", 1);
   pub_tf_ = this->create_publisher<geometry_msgs::msg::TransformStamped>(
       "LxCamera_TF", 1);
-  pub_location_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-      "LxCamera_Location", 1);
 
   srv_cmd_ = this->create_service<lx_camera_ros::srv::LxCmd>(
       "LxCamera_LxCmd", std::bind(&LxCamera::LxCmd, this, std::placeholders::_1,
@@ -266,7 +262,6 @@ LxCamera::on_cleanup(const rclcpp_lifecycle::State &) {
   pub_obstacle_.reset();
   pub_cloud_.reset();
   pub_tf_.reset();
-  pub_location_.reset();
   pub_error_.reset();
   diagnostic_updater_.reset();
   srv_cmd_.reset();
@@ -428,7 +423,6 @@ void LxCamera::Run() {
     const bool has_fr_sub = pub_temper_ && pub_temper_->get_subscription_count() > 0;
     const bool has_obstacle_sub = pub_obstacle_ && pub_obstacle_->get_subscription_count() > 0;
     const bool has_pallet_sub = pub_pallet_ && pub_pallet_->get_subscription_count() > 0;
-    const bool has_location_sub = pub_location_ && pub_location_->get_subscription_count() > 0;
 
     if (is_xyz_ && has_cloud_sub) {
       float *xyz_data = nullptr;
@@ -656,33 +650,6 @@ void LxCamera::Run() {
       result.y = lao->y;
       result.yaw = lao->yaw;
       pub_pallet_->publish(result);
-      break;
-    }
-    case MODE_VISION_LOCATION: {
-      if (!has_location_sub) {
-        break;
-      }
-      if (ret || !app_ptr) {
-        break;
-      }
-      LxLocation *val = (LxLocation *)app_ptr;
-      if (!val->status) {
-        geometry_msgs::msg::PoseStamped alg_val;
-        int64_t nanoseconds =
-            static_cast<int64_t>(one_frame->app_data.sensor_timestamp * 1e3);
-        alg_val.header.stamp.sec = nanoseconds / 1e9;
-        alg_val.header.stamp.nanosec = nanoseconds % static_cast<int64_t>(1e9);
-        alg_val.header.frame_id = "mrdvs";
-        auto qua_res = ToQuaternion(val->theta, 0, 0);
-        alg_val.pose.position.x = val->x;
-        alg_val.pose.position.y = val->y;
-        alg_val.pose.position.z = 0;
-        alg_val.pose.orientation.x = qua_res.x;
-        alg_val.pose.orientation.y = qua_res.y;
-        alg_val.pose.orientation.z = qua_res.z;
-        alg_val.pose.orientation.w = qua_res.w;
-        pub_location_->publish(alg_val);
-      }
       break;
     }
     case MODE_AVOID_OBSTACLE2: {
