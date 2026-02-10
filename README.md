@@ -1,42 +1,61 @@
 # Lx Camera SDK (Linux / ROS2 / C++)
 
-This repo is trimmed to **Linux + ROS2 + C++ only**. Non-Linux, non-ROS2, and non-C++ content has been removed.
+This repository contains Linux SDK libraries and a ROS2 driver (`lx_camera_ros`).
 
 ## Contents
 
 - `linux/SDK/include`: SDK headers
-- `linux/SDK/lib`: SDK shared libraries for Linux
-- `linux/Sample/C`: C/C++ examples
-- `linux/Sample/ros2/lx_camera_node_ws`: ROS2 driver workspace
+- `linux/SDK/lib`: SDK shared libraries
+- `linux/Sample/C`: C/C++ sample programs
+- `linux/Sample/ros2/lx_camera_node_ws`: ROS2 workspace
 
-## Compatibility Check (as of Feb 3, 2026)
+## Compatibility
 
-- **Ubuntu 22.04 + ROS2 Humble**: Documented as tested in the vendor docs. Considered compatible.
-- **Ubuntu 24.04 + ROS2 (Jazzy)**: No vendor test statement in this repo. The build uses the Ubuntu 22.04 launch set for any OS newer than 18.04. It may build, but **is not officially verified** here.
+- Recommended: Ubuntu 22.04 + ROS2 Humble
+- Ubuntu 24.04 + ROS2 Jazzy may work, but is not officially verified in this repo.
 
-## Prerequisites
+## Why `linux/install.sh` Is Required
 
-- Ubuntu 22.04 (recommended) or 24.04 (unverified)
-- ROS2 Humble (22.04) / ROS2 Jazzy (24.04)
-- `colcon`, `ament_cmake`, and ROS2 dependencies (OpenCV, PCL, cv_bridge, etc.)
+The ROS2 node dynamically loads:
 
-Install ROS2 dependencies via rosdep:
+- `/opt/Lanxin-MRDVS/lib/libLxCameraApi.so`
 
-```bash
-cd linux/Sample/ros2/lx_camera_node_ws
-rosdep install --from-paths src --ignore-src -r -y
-```
+So SDK installation is mandatory before running the camera node.
 
-## Install SDK
+`linux/install.sh` does all of the following:
 
-This copies SDK headers/libs into `/opt/Lanxin-MRDVS` and sets `LD_LIBRARY_PATH`.
+1. Copies SDK headers/libs to `/opt/Lanxin-MRDVS`
+2. Selects platform libs by architecture (`x86_64`, `aarch64`, `arm`)
+3. Exports `/opt/Lanxin-MRDVS/lib` into `LD_LIBRARY_PATH`
+4. Runs socket buffer setup
+
+Run it once:
 
 ```bash
 cd linux
 sudo ./install.sh
 ```
 
-## Build ROS2 Driver
+Quick sanity check:
+
+```bash
+ls -l /opt/Lanxin-MRDVS/lib/libLxCameraApi.so
+```
+
+## Prerequisites
+
+- ROS2 environment installed and sourced
+- `colcon`, `ament_cmake`
+- ROS2 dependencies (OpenCV, PCL, cv_bridge, etc.)
+
+Install dependencies with rosdep:
+
+```bash
+cd linux/Sample/ros2/lx_camera_node_ws
+rosdep install --from-paths src --ignore-src -r -y
+```
+
+## Build
 
 ```bash
 cd linux/Sample/ros2/lx_camera_node_ws
@@ -44,16 +63,23 @@ colcon build
 source install/setup.bash
 ```
 
-Or use the script:
+For symlink install:
 
 ```bash
-cd linux/Sample/ros2/lx_camera_node_ws
-./build.sh
+colcon build --symlink-install
 ```
 
-## Run (ROS2)
+If symlink build fails with
+`existing path cannot be removed: Is a directory`, clean package artifacts and rebuild:
 
-### Default launch
+```bash
+rm -rf build/lx_camera_ros install/lx_camera_ros log/latest_build/lx_camera_ros
+colcon build --symlink-install --packages-select lx_camera_ros
+```
+
+## Run
+
+### 1) Standard launch (auto camera start)
 
 ```bash
 cd linux/Sample/ros2/lx_camera_node_ws
@@ -61,7 +87,29 @@ source install/setup.bash
 ros2 launch lx_camera_ros lx_camera_ros.launch.py
 ```
 
-### Other launch files
+This path uses `lx_camera_node` and auto runs lifecycle transitions internally.
+
+### 2) Lifecycle launch (manual by default)
+
+```bash
+ros2 launch lx_camera_ros lx_camera_ros_lifecycle.launch.py
+```
+
+Default is manual lifecycle (`autostart:=false`), so camera does not stream until you transition:
+
+```bash
+ros2 lifecycle get /lx_camera_node/lx_camera_node
+ros2 lifecycle set /lx_camera_node/lx_camera_node configure
+ros2 lifecycle set /lx_camera_node/lx_camera_node activate
+```
+
+If you want lifecycle launch to auto transition:
+
+```bash
+ros2 launch lx_camera_ros lx_camera_ros_lifecycle.launch.py autostart:=true
+```
+
+### 3) Other app launches
 
 ```bash
 ros2 launch lx_camera_ros obstacle.launch.py
@@ -69,9 +117,24 @@ ros2 launch lx_camera_ros obstacleV2.launch.py
 ros2 launch lx_camera_ros pallet.launch.py
 ```
 
-## Where to Change Parameters
+## Diagnostics
 
-Launch files are copied during build. **Edit the source launch files** under:
+The driver publishes diagnostics to:
+
+- `/diagnostics`
+
+Check:
+
+```bash
+ros2 topic echo /diagnostics
+```
+
+Current diagnostics focus on stream health (device open/start/frame timeout).  
+Frequency diagnostics are intentionally not enabled.
+
+## Where to Edit Launch Parameters
+
+Edit source launch files here:
 
 ```text
 linux/Sample/ros2/lx_camera_node_ws/src/lx_camera_ros/src/launch/ubuntu22/
@@ -84,7 +147,17 @@ cd linux/Sample/ros2/lx_camera_node_ws
 colcon build
 ```
 
-## Notes
+## Common Error
 
-- On Ubuntu 22.04+ the driver enables **dynamic loading** to avoid FastDDS conflicts (see `CMakeLists.txt`).
-- Launch files are copied into `launch/` during build from `src/launch/ubuntu22/`.
+If you see:
+
+```text
+Load lib failed: /opt/Lanxin-MRDVS/lib/libLxCameraApi.so: cannot open shared object file
+```
+
+It means SDK installation is missing or incorrect. Re-run:
+
+```bash
+cd linux
+sudo ./install.sh
+```

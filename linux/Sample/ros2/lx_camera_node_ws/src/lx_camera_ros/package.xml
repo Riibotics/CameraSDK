@@ -9,6 +9,9 @@
 
 	<buildtool_depend>ament_cmake</buildtool_depend>
 	<exec_depend>rclcpp</exec_depend>
+	<exec_depend>rclcpp_lifecycle</exec_depend>
+	<exec_depend>lifecycle_msgs</exec_depend>
+	<exec_depend>diagnostic_updater</exec_depend>
 	<exec_depend>std_msgs</exec_depend>
 	<exec_depend>sensor_msgs</exec_depend>
 	<exec_depend>image_transport</exec_depend>
@@ -26,4 +29,3 @@
 	<build_type>ament_cmake</build_type>
 </export>
 </package>
-

@@ -23,7 +23,7 @@ def generate_launch_description():
         emulate_tty=True,
         parameters=[
             # <!-- IP, log path, stream config, algorithm, work mode, point cloud unit -->
-        	  {"ip": "0"},
+        	  {"ip": "192.168.100.82"}, # Default ip
             {"log_path": "/var/log/"},
             {"is_xyz": 1},
             {"is_depth": 1},
