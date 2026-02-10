@@ -254,26 +254,6 @@ void CallbackFunc(FrameInfo* frame_ptr, void* usr_data)
             printf("palletdata ret:%d x:%f, y:%f yaw:%f\n",
                 palletdata->return_val, palletdata->x, palletdata->y, palletdata->yaw);
         }
-        else if (frame_ptr->app_data.frame_data_type == LX_DATA_OBSTACLE2)
-        {
-            LxAvoidanceOutputN* obstacle = (LxAvoidanceOutputN*)frame_ptr->app_data.frame_data;
-            if (obstacle->state != LxAvSuccess) {
-                printf("state is not success\n");
-                return;
-            }
-
-            if (obstacle->obstacleBoxs != nullptr)
-            {
-                printf(" obstacle data ");
-                int box_num = obstacle->number_box < 10 ? obstacle->number_box : 10;
-                for (int i = 0; i < box_num; i++)
-                {
-                    printf("index:%d width:%f height:%f depth:%f center:%f %f %f",
-                        i, obstacle->obstacleBoxs[i].width, obstacle->obstacleBoxs[i].height, obstacle->obstacleBoxs[i].depth,
-                        obstacle->obstacleBoxs[i].center[0], obstacle->obstacleBoxs[i].center[1], obstacle->obstacleBoxs[i].center[2]);
-                }
-            }
-        }
     }
     return;
 }

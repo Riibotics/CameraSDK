@@ -39,8 +39,5 @@ endmacro()
 
 add_exe(single_camera2)
 add_exe(multi_cameras)
-add_exe(application_obstacle_v1)
-add_exe(application_obstacle_v2)
 add_exe(application_pallet)
 add_exe(frame_callback)
-

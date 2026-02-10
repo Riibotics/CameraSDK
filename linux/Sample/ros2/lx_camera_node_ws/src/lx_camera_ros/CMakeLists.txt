@@ -13,8 +13,6 @@ else()
 	SET(LAUNCH_DIR "${CMAKE_SOURCE_DIR}/src/launch/ubuntu22/")
 endif ()
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/pallet.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/obstacle.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/obstacleV2.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/lx_camera_ros.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/lx_camera_ros_lifecycle.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 
@@ -41,9 +39,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-"msg/ObstacleBox.msg"
 "msg/FrameRate.msg"
-"msg/Obstacle.msg"
 "msg/Pallet.msg"
 "msg/Result.msg"
 

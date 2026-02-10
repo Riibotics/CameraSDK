@@ -22,7 +22,6 @@
 #include "tf2_ros/transform_broadcaster.h"
 
 #include "lx_camera_ros/msg/frame_rate.hpp"
-#include "lx_camera_ros/msg/obstacle.hpp"
 #include "lx_camera_ros/msg/pallet.hpp"
 #include "lx_camera_ros/msg/result.hpp"
 
@@ -89,8 +88,6 @@ private:
       pub_cloud_;
   rclcpp_lifecycle::LifecyclePublisher<lx_camera_ros::msg::FrameRate>::SharedPtr
       pub_temper_;
-  rclcpp_lifecycle::LifecyclePublisher<lx_camera_ros::msg::Obstacle>::SharedPtr
-      pub_obstacle_;
   rclcpp_lifecycle::LifecyclePublisher<lx_camera_ros::msg::Pallet>::SharedPtr
       pub_pallet_;
 

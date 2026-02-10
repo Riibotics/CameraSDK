@@ -51,7 +51,6 @@ void LxCamera::ActivatePublishers() {
   if (pub_tof_info_) pub_tof_info_->on_activate();
   if (pub_pallet_) pub_pallet_->on_activate();
   if (pub_temper_) pub_temper_->on_activate();
-  if (pub_obstacle_) pub_obstacle_->on_activate();
   if (pub_cloud_) pub_cloud_->on_activate();
   if (pub_tf_) pub_tf_->on_activate();
 }
@@ -64,7 +63,6 @@ void LxCamera::DeactivatePublishers() {
   if (pub_tof_info_) pub_tof_info_->on_deactivate();
   if (pub_pallet_) pub_pallet_->on_deactivate();
   if (pub_temper_) pub_temper_->on_deactivate();
-  if (pub_obstacle_) pub_obstacle_->on_deactivate();
   if (pub_cloud_) pub_cloud_->on_deactivate();
   if (pub_tf_) pub_tf_->on_deactivate();
 }
@@ -179,8 +177,6 @@ LxCamera::on_configure(const rclcpp_lifecycle::State &) {
       this->create_publisher<lx_camera_ros::msg::Pallet>("LxCamera_Pallet", 1);
   pub_temper_ = this->create_publisher<lx_camera_ros::msg::FrameRate>(
       "LxCamera_FrameRate", 1);
-  pub_obstacle_ = this->create_publisher<lx_camera_ros::msg::Obstacle>(
-      "LxCamera_Obstacle", 1);
   pub_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
       "LxCamera_Cloud", 1);
   pub_tf_ = this->create_publisher<geometry_msgs::msg::TransformStamped>(
@@ -259,7 +255,6 @@ LxCamera::on_cleanup(const rclcpp_lifecycle::State &) {
   pub_tof_info_.reset();
   pub_pallet_.reset();
   pub_temper_.reset();
-  pub_obstacle_.reset();
   pub_cloud_.reset();
   pub_tf_.reset();
   pub_error_.reset();
@@ -421,7 +416,6 @@ void LxCamera::Run() {
     const bool has_rgb_info_sub = pub_rgb_info_ && pub_rgb_info_->get_subscription_count() > 0;
     const bool has_tf_sub = pub_tf_ && pub_tf_->get_subscription_count() > 0;
     const bool has_fr_sub = pub_temper_ && pub_temper_->get_subscription_count() > 0;
-    const bool has_obstacle_sub = pub_obstacle_ && pub_obstacle_->get_subscription_count() > 0;
     const bool has_pallet_sub = pub_pallet_ && pub_pallet_->get_subscription_count() > 0;
 
     if (is_xyz_ && has_cloud_sub) {
@@ -594,43 +588,6 @@ void LxCamera::Run() {
     int ret = 0;
     void *app_ptr = one_frame->app_data.frame_data;
     switch (inside_app_) {
-    case MODE_AVOID_OBSTACLE: {
-      if (!has_obstacle_sub) {
-        break;
-      }
-      lx_camera_ros::msg::Obstacle result;
-      result.header.frame_id = "mrdvs";
-      int64_t nanoseconds =
-          static_cast<int64_t>(one_frame->app_data.sensor_timestamp * 1e3);
-      result.header.stamp.sec = nanoseconds / 1e9;
-      result.header.stamp.nanosec = nanoseconds % static_cast<int64_t>(1e9);
-      Check("GetObstacleIO", DcSpecialControl(handle_, "GetObstacleIO",
-                                              (void *)&result.io_output));
-      if (ret || !app_ptr) {
-        result.status = -1;
-        pub_obstacle_->publish(result);
-        break;
-      }
-      LxAvoidanceOutput *lao = (LxAvoidanceOutput *)app_ptr;
-      result.status = lao->state;
-      result.box_number = lao->number_box;
-      for (int i = 0; i < lao->number_box; i++) {
-        auto raw_box = lao->obstacleBoxs[i];
-        lx_camera_ros::msg::ObstacleBox box;
-        box.width = raw_box.width;
-        box.depth = raw_box.depth;
-        box.height = raw_box.height;
-        for (int t = 0; t < 3; t++)
-          box.center[t] = raw_box.center[t];
-        for (int t = 0; t < 9; t++)
-          box.rotation[t] = raw_box.pose.R[t];
-        for (int t = 0; t < 3; t++)
-          box.translation[t] = raw_box.pose.T[t];
-        result.box.push_back(box);
-      }
-      pub_obstacle_->publish(result);
-      break;
-    }
     case MODE_PALLET_LOCATE: {
       if (!has_pallet_sub) {
         break;
@@ -650,43 +607,6 @@ void LxCamera::Run() {
       result.y = lao->y;
       result.yaw = lao->yaw;
       pub_pallet_->publish(result);
-      break;
-    }
-    case MODE_AVOID_OBSTACLE2: {
-      if (!has_obstacle_sub) {
-        break;
-      }
-      lx_camera_ros::msg::Obstacle result;
-      result.header.frame_id = "mrdvs";
-      int64_t nanoseconds =
-          static_cast<int64_t>(one_frame->app_data.sensor_timestamp * 1e3);
-      result.header.stamp.sec = nanoseconds / 1e9;
-      result.header.stamp.nanosec = nanoseconds % static_cast<int64_t>(1e9);
-      Check("GetObstacleIO", DcSpecialControl(handle_, "GetObstacleIO",
-                                              (void *)&result.io_output));
-      if (ret || !app_ptr) {
-        result.status = -1;
-        pub_obstacle_->publish(result);
-        break;
-      }
-      LxAvoidanceOutputN *lao = (LxAvoidanceOutputN *)app_ptr;
-      result.status = lao->state;
-      result.box_number = lao->number_box;
-      for (int i = 0; i < lao->number_box; i++) {
-        auto raw_box = lao->obstacleBoxs[i];
-        lx_camera_ros::msg::ObstacleBox box;
-        box.width = raw_box.width;
-        box.depth = raw_box.depth;
-        box.height = raw_box.height;
-        for (int t = 0; t < 3; t++)
-          box.center[t] = raw_box.center[t];
-        for (int t = 0; t < 9; t++)
-          box.rotation[t] = raw_box.pose.R[t];
-        for (int t = 0; t < 3; t++)
-          box.translation[t] = raw_box.pose.T[t];
-        result.box.push_back(box);
-      }
-      pub_obstacle_->publish(result);
       break;
     }
     }
