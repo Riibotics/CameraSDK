@@ -25,13 +25,152 @@ geometry_msgs::msg::TransformStamped PoseToTf(const Eigen::Matrix4f &pose) {
   return transform_stamped;
 }
 
-LxCamera::LxCamera(DcLib *dynamic_lib) : Node("lx_camera_node") {
+LxCamera::LxCamera(DcLib *dynamic_lib, const rclcpp::NodeOptions &options)
+    : rclcpp_lifecycle::LifecycleNode("lx_camera_node", options) {
   RCLCPP_INFO(this->get_logger(), "lx_camera_node start!");
   LX_DYNAMIC_LIB = dynamic_lib;
   qos_ = rmw_qos_profile_default;
-  ReadParam();
+}
 
-  auto default_qos = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
+LxCamera::~LxCamera() {
+  StopWorker();
+  if (is_start_) {
+    Stop();
+  }
+  if (is_device_open_) {
+    DcCloseDevice(handle_);
+    is_device_open_ = false;
+  }
+}
+
+void LxCamera::ActivatePublishers() {
+  if (pub_rgb_) pub_rgb_->on_activate();
+  if (pub_rgb_info_) pub_rgb_info_->on_activate();
+  if (pub_amp_) pub_amp_->on_activate();
+  if (pub_depth_) pub_depth_->on_activate();
+  if (pub_tof_info_) pub_tof_info_->on_activate();
+  if (pub_pallet_) pub_pallet_->on_activate();
+  if (pub_temper_) pub_temper_->on_activate();
+  if (pub_cloud_) pub_cloud_->on_activate();
+  if (pub_tf_) pub_tf_->on_activate();
+}
+
+void LxCamera::DeactivatePublishers() {
+  if (pub_rgb_) pub_rgb_->on_deactivate();
+  if (pub_rgb_info_) pub_rgb_info_->on_deactivate();
+  if (pub_amp_) pub_amp_->on_deactivate();
+  if (pub_depth_) pub_depth_->on_deactivate();
+  if (pub_tof_info_) pub_tof_info_->on_deactivate();
+  if (pub_pallet_) pub_pallet_->on_deactivate();
+  if (pub_temper_) pub_temper_->on_deactivate();
+  if (pub_cloud_) pub_cloud_->on_deactivate();
+  if (pub_tf_) pub_tf_->on_deactivate();
+}
+
+void LxCamera::StopWorker() {
+  run_worker_.store(false);
+  if (run_thread_.joinable()) {
+    run_thread_.join();
+  }
+}
+
+void LxCamera::UpdateDiagnostics(
+    diagnostic_updater::DiagnosticStatusWrapper &status) {
+  std::lock_guard<std::mutex> lock(diagnostic_mutex_);
+  const auto now = std::chrono::steady_clock::now();
+
+  // Severity policy:
+  // - ERROR: camera is not open, or frame timeout exceeded.
+  // - WARN: stream not started yet, or waiting for first frame.
+  // - OK: frame stream is healthy within timeout window.
+  if (!is_device_open_) {
+    status.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                   "Device is not open");
+  } else if (!is_start_) {
+    status.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                   "Stream is not started");
+  } else if (!has_frame_) {
+    status.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                   "Waiting for first frame");
+  } else {
+    const auto age = now - last_frame_time_;
+    if (age > frame_timeout_) {
+      status.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                     "No frames received recently");
+    } else {
+      status.summary(diagnostic_msgs::msg::DiagnosticStatus::OK,
+                     "Camera streaming normally");
+    }
+    const auto age_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(age).count();
+    status.add("last_frame_age_ms", static_cast<int>(age_ms));
+  }
+
+  // Keep raw state flags in diagnostics for quick triage.
+  status.add("device_open", is_device_open_ ? 1 : 0);
+  status.add("stream_started", is_start_ ? 1 : 0);
+}
+
+bool LxCamera::ConfigureDevice() {
+  auto fail = [this]() {
+    if (is_start_) {
+      Stop();
+    }
+    if (is_device_open_) {
+      DcCloseDevice(handle_);
+      handle_ = 0;
+      is_device_open_ = false;
+    }
+    return false;
+  };
+  // set sdk log
+  RCLCPP_INFO(this->get_logger(), "Api version: %s", DcGetApiVersion());
+  DcSetInfoOutput(1, true, log_path_.c_str());
+
+  if (!SearchAndOpenDevice()) {
+    return false;
+  }
+  is_device_open_ = true;
+
+  if (raw_param_) {
+    SetParam();
+  }
+  if (Check("LX_INT_ALGORITHM_MODE",
+            DcSetIntValue(handle_, LX_INT_ALGORITHM_MODE, inside_app_)) !=
+      LX_SUCCESS) {
+    return fail();
+  }
+  if (Check("LX_BOOL_ENABLE_3D_DEPTH_STREAM",
+            DcSetBoolValue(handle_, LX_BOOL_ENABLE_3D_DEPTH_STREAM,
+                           is_xyz_ || is_depth_)) != LX_SUCCESS) {
+    return fail();
+  }
+  if (Check("LX_BOOL_ENABLE_3D_AMP_STREAM",
+            DcSetBoolValue(handle_, LX_BOOL_ENABLE_3D_AMP_STREAM, is_amp_)) !=
+      LX_SUCCESS) {
+    return fail();
+  }
+  if (Check("LX_BOOL_ENABLE_2D_STREAM",
+            DcSetBoolValue(handle_, LX_BOOL_ENABLE_2D_STREAM, is_rgb_)) !=
+      LX_SUCCESS) {
+    return fail();
+  }
+  if (Check("LX_INT_WORK_MODE",
+            DcSetIntValue(handle_, LX_INT_WORK_MODE, lx_work_mode_)) !=
+      LX_SUCCESS) {
+    return fail();
+  }
+  return true;
+}
+
+LxCamera::LifecycleCBReturn
+LxCamera::on_configure(const rclcpp_lifecycle::State &) {
+  RCLCPP_INFO(this->get_logger(), "on_configure()...");
+  ReadParam();
+  if (!ConfigureDevice()) {
+    return LifecycleCBReturn::FAILURE;
+  }
+
   pub_rgb_ = this->create_publisher<sensor_msgs::msg::Image>("LxCamera_Rgb", 1);
   pub_rgb_info_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(
       "LxCamera_RgbInfo", 1);
@@ -47,62 +186,103 @@ LxCamera::LxCamera(DcLib *dynamic_lib) : Node("lx_camera_node") {
       this->create_publisher<lx_camera_ros::msg::Pallet>("LxCamera_Pallet", 1);
   pub_temper_ = this->create_publisher<lx_camera_ros::msg::FrameRate>(
       "LxCamera_FrameRate", 1);
-  pub_obstacle_ = this->create_publisher<lx_camera_ros::msg::Obstacle>(
-      "LxCamera_Obstacle", 1);
   pub_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
       "LxCamera_Cloud", 1);
   pub_tf_ = this->create_publisher<geometry_msgs::msg::TransformStamped>(
       "LxCamera_TF", 1);
 
-  auto cmd = this->create_service<lx_camera_ros::srv::LxCmd>(
+  srv_cmd_ = this->create_service<lx_camera_ros::srv::LxCmd>(
       "LxCamera_LxCmd", std::bind(&LxCamera::LxCmd, this, std::placeholders::_1,
                                   std::placeholders::_2));
-  auto lxi = this->create_service<lx_camera_ros::srv::LxInt>(
+  srv_int_ = this->create_service<lx_camera_ros::srv::LxInt>(
       "LxCamera_LxInt", std::bind(&LxCamera::LxInt, this, std::placeholders::_1,
                                   std::placeholders::_2));
-  auto lxb = this->create_service<lx_camera_ros::srv::LxBool>(
+  srv_bool_ = this->create_service<lx_camera_ros::srv::LxBool>(
       "LxCamera_LxBool",
       std::bind(&LxCamera::LxBool, this, std::placeholders::_1,
                 std::placeholders::_2));
-  auto lxf = this->create_service<lx_camera_ros::srv::LxFloat>(
+  srv_float_ = this->create_service<lx_camera_ros::srv::LxFloat>(
       "LxCamera_LxFloat",
       std::bind(&LxCamera::LxFloat, this, std::placeholders::_1,
                 std::placeholders::_2));
-  auto lxs = this->create_service<lx_camera_ros::srv::LxString>(
+  srv_string_ = this->create_service<lx_camera_ros::srv::LxString>(
       "LxCamera_LxString",
       std::bind(&LxCamera::LxString, this, std::placeholders::_1,
                 std::placeholders::_2));
-
-  // set sdk log
-  RCLCPP_INFO(this->get_logger(), "Api version: %s", DcGetApiVersion());
-  DcSetInfoOutput(1, true, log_path_.c_str());
-
-  if (SearchAndOpenDevice()) {
-    if (raw_param_) {
-      SetParam();
-    }
-    Check("LX_INT_ALGORITHM_MODE",
-          DcSetIntValue(handle_, LX_INT_ALGORITHM_MODE, inside_app_));
-    Check("LX_BOOL_ENABLE_3D_DEPTH_STREAM",
-          DcSetBoolValue(handle_, LX_BOOL_ENABLE_3D_DEPTH_STREAM,
-                         is_xyz_ || is_depth_));
-    Check("LX_BOOL_ENABLE_3D_AMP_STREAM",
-          DcSetBoolValue(handle_, LX_BOOL_ENABLE_3D_AMP_STREAM, is_amp_));
-    Check("LX_BOOL_ENABLE_2D_STREAM",
-          DcSetBoolValue(handle_, LX_BOOL_ENABLE_2D_STREAM, is_rgb_));
-    Check("LX_INT_WORK_MODE",
-          DcSetIntValue(handle_, LX_INT_WORK_MODE, lx_work_mode_));
-
-    if (!is_start_) {
-      Start();
-    }
-    Run();
-  }
+  return LifecycleCBReturn::SUCCESS;
 }
 
-LxCamera::~LxCamera() {
-  DcStopStream(handle_);
-  DcCloseDevice(handle_);
+LxCamera::LifecycleCBReturn
+LxCamera::on_activate(const rclcpp_lifecycle::State &) {
+  RCLCPP_INFO(this->get_logger(), "on_activate()...");
+  ActivatePublishers();
+  if (!is_start_ && Start() != LX_SUCCESS) {
+    return LifecycleCBReturn::FAILURE;
+  }
+  {
+    std::lock_guard<std::mutex> lock(diagnostic_mutex_);
+    has_frame_ = false;
+    last_frame_time_ = std::chrono::steady_clock::now();
+  }
+  diagnostic_updater_ = std::make_unique<diagnostic_updater::Updater>(this);
+  diagnostic_updater_->setHardwareID("lanxin_mrdvs");
+  diagnostic_updater_->setPeriod(1.0);
+  diagnostic_updater_->add("camera_stream_status", this,
+                           &LxCamera::UpdateDiagnostics);
+  run_worker_.store(true);
+  run_thread_ = std::thread(&LxCamera::Run, this);
+  return LifecycleCBReturn::SUCCESS;
+}
+
+LxCamera::LifecycleCBReturn
+LxCamera::on_deactivate(const rclcpp_lifecycle::State &) {
+  RCLCPP_INFO(this->get_logger(), "on_deactivate()...");
+  StopWorker();
+  if (is_start_) {
+    Stop();
+  }
+  diagnostic_updater_.reset();
+  DeactivatePublishers();
+  return LifecycleCBReturn::SUCCESS;
+}
+
+LxCamera::LifecycleCBReturn
+LxCamera::on_cleanup(const rclcpp_lifecycle::State &) {
+  RCLCPP_INFO(this->get_logger(), "on_cleanup()...");
+  StopWorker();
+  if (is_start_) {
+    Stop();
+  }
+  DeactivatePublishers();
+  pub_rgb_.reset();
+  pub_rgb_info_.reset();
+  pub_amp_.reset();
+  pub_depth_.reset();
+  pub_tof_info_.reset();
+  pub_pallet_.reset();
+  pub_temper_.reset();
+  pub_cloud_.reset();
+  pub_tf_.reset();
+  pub_error_.reset();
+  diagnostic_updater_.reset();
+  srv_cmd_.reset();
+  srv_int_.reset();
+  srv_bool_.reset();
+  srv_float_.reset();
+  srv_string_.reset();
+  if (is_device_open_) {
+    DcCloseDevice(handle_);
+    is_device_open_ = false;
+    handle_ = 0;
+  }
+  return LifecycleCBReturn::SUCCESS;
+}
+
+LxCamera::LifecycleCBReturn
+LxCamera::on_shutdown(const rclcpp_lifecycle::State &state) {
+  RCLCPP_INFO(this->get_logger(), "on_shutdown()...");
+  (void)on_cleanup(state);
+  return LifecycleCBReturn::SUCCESS;
 }
 
 int LxCamera::Start() {
@@ -212,8 +392,18 @@ void LxCamera::Run() {
   }
 
   rclcpp::Rate rate(20);
-  rclcpp::Node::SharedPtr node(this);
-  while (rclcpp::ok()) {
+  auto last_diag_force = std::chrono::steady_clock::now();
+  while (rclcpp::ok() && run_worker_.load()) {
+    // Publish diagnostics periodically even if frame acquisition fails.
+    // This ensures stale/no-frame conditions are still reported.
+    if (diagnostic_updater_) {
+      const auto now_diag = std::chrono::steady_clock::now();
+      if (now_diag - last_diag_force >= std::chrono::seconds(1)) {
+        diagnostic_updater_->force_update();
+        last_diag_force = now_diag;
+      }
+    }
+
     FrameInfo *one_frame = nullptr;
     auto sret = DcSetCmd(handle_, LX_CMD_GET_NEW_FRAME);
     if ((LX_SUCCESS != sret) && (LX_E_FRAME_ID_NOT_MATCH != sret) &&
@@ -224,11 +414,25 @@ void LxCamera::Run() {
               DcGetPtrValue(handle_, LX_PTR_FRAME_DATA, (void **)&one_frame))) {
       continue;
     }
+    {
+      std::lock_guard<std::mutex> lock(diagnostic_mutex_);
+      has_frame_ = true;
+      last_frame_time_ = std::chrono::steady_clock::now();
+    }
     rclcpp::Time now = this->get_clock()->now();
     float dep_fps = 0.0, amp_fps = 0.0, rgb_fps = 0.0, temp = 0.0;
     LxFloatValueInfo f_val;
+    const bool has_cloud_sub = pub_cloud_ && pub_cloud_->get_subscription_count() > 0;
+    const bool has_depth_sub = pub_depth_ && pub_depth_->get_subscription_count() > 0;
+    const bool has_amp_sub = pub_amp_ && pub_amp_->get_subscription_count() > 0;
+    const bool has_rgb_sub = pub_rgb_ && pub_rgb_->get_subscription_count() > 0;
+    const bool has_tof_info_sub = pub_tof_info_ && pub_tof_info_->get_subscription_count() > 0;
+    const bool has_rgb_info_sub = pub_rgb_info_ && pub_rgb_info_->get_subscription_count() > 0;
+    const bool has_tf_sub = pub_tf_ && pub_tf_->get_subscription_count() > 0;
+    const bool has_fr_sub = pub_temper_ && pub_temper_->get_subscription_count() > 0;
+    const bool has_pallet_sub = pub_pallet_ && pub_pallet_->get_subscription_count() > 0;
 
-    if (is_xyz_) {
+    if (is_xyz_ && has_cloud_sub) {
       float *xyz_data = nullptr;
       if (DcGetPtrValue(handle_, LX_PTR_XYZ_DATA, (void **)&xyz_data) ==
           LX_SUCCESS) {
@@ -261,7 +465,7 @@ void LxCamera::Run() {
                     std::string("Cloud point data is empty!").c_str());
     }
 
-    if (is_depth_) {
+    if (is_depth_ && has_depth_sub) {
       void *dep_data = one_frame->depth_data.frame_data;
        
       if (dep_data) {
@@ -297,7 +501,7 @@ void LxCamera::Run() {
       dep_fps = f_val.cur_value;      
     }   
 
-    if (is_amp_) {
+    if (is_amp_ && has_amp_sub) {
       void *amp_data = one_frame->amp_data.frame_data;
       if (amp_data) {
         cv_bridge::CvImage cv_img;
@@ -328,7 +532,7 @@ void LxCamera::Run() {
     }
     
 
-    if (is_rgb_) {
+    if (is_rgb_ && has_rgb_sub) {
       void *rgb_data = one_frame->rgb_data.frame_data;
       if (rgb_data) {
         cv::Mat rgb_pub;
@@ -356,30 +560,32 @@ void LxCamera::Run() {
       rgb_fps = f_val.cur_value;
     }
      
-    if (is_amp_ || is_depth_ || is_xyz_) {
+    if ((is_amp_ || is_depth_ || is_xyz_) && has_tof_info_sub) {
       tof_info_.header.stamp = now;
       pub_tof_info_->publish(tof_info_);
     }
-    if (is_rgb_) {
+    if (is_rgb_ && has_rgb_info_sub) {
       rgb_info_.header.stamp = now;
       pub_rgb_info_->publish(rgb_info_);
     }
-    if (is_xyz_) {
+    if (is_xyz_ && has_tf_sub) {
       tf_.header.stamp = now;
       pub_tf_->publish(tf_);
     }
 
-    Check("LX_FLOAT_DEVICE_TEMPERATURE",
-          DcGetFloatValue(handle_, LX_FLOAT_DEVICE_TEMPERATURE, &f_val));
-    temp = f_val.cur_value;
-    lx_camera_ros::msg::FrameRate fr;
-    fr.header.frame_id = "mrdvs";
-    fr.header.stamp = now;
-    fr.amp = amp_fps;
-    fr.rgb = rgb_fps;
-    fr.depth = dep_fps;
-    fr.temperature = temp;
-    pub_temper_->publish(fr);
+    if (has_fr_sub) {
+      Check("LX_FLOAT_DEVICE_TEMPERATURE",
+            DcGetFloatValue(handle_, LX_FLOAT_DEVICE_TEMPERATURE, &f_val));
+      temp = f_val.cur_value;
+      lx_camera_ros::msg::FrameRate fr;
+      fr.header.frame_id = "mrdvs";
+      fr.header.stamp = now;
+      fr.amp = amp_fps;
+      fr.rgb = rgb_fps;
+      fr.depth = dep_fps;
+      fr.temperature = temp;
+      pub_temper_->publish(fr);
+    }
 
     // pub TF
     tf_ext_base_tof.header.stamp = now;
@@ -396,41 +602,10 @@ void LxCamera::Run() {
     int ret = 0;
     void *app_ptr = one_frame->app_data.frame_data;
     switch (inside_app_) {
-    case MODE_AVOID_OBSTACLE: {
-      lx_camera_ros::msg::Obstacle result;
-      result.header.frame_id = "mrdvs";
-      int64_t nanoseconds =
-          static_cast<int64_t>(one_frame->app_data.sensor_timestamp * 1e3);
-      result.header.stamp.sec = nanoseconds / 1e9;
-      result.header.stamp.nanosec = nanoseconds % static_cast<int64_t>(1e9);
-      Check("GetObstacleIO", DcSpecialControl(handle_, "GetObstacleIO",
-                                              (void *)&result.io_output));
-      if (ret || !app_ptr) {
-        result.status = -1;
-        pub_obstacle_->publish(result);
+    case MODE_PALLET_LOCATE: {
+      if (!has_pallet_sub) {
         break;
       }
-      LxAvoidanceOutput *lao = (LxAvoidanceOutput *)app_ptr;
-      result.status = lao->state;
-      result.box_number = lao->number_box;
-      for (int i = 0; i < lao->number_box; i++) {
-        auto raw_box = lao->obstacleBoxs[i];
-        lx_camera_ros::msg::ObstacleBox box;
-        box.width = raw_box.width;
-        box.depth = raw_box.depth;
-        box.height = raw_box.height;
-        for (int t = 0; t < 3; t++)
-          box.center[t] = raw_box.center[t];
-        for (int t = 0; t < 9; t++)
-          box.rotation[t] = raw_box.pose.R[t];
-        for (int t = 0; t < 3; t++)
-          box.translation[t] = raw_box.pose.T[t];
-        result.box.push_back(box);
-      }
-      pub_obstacle_->publish(result);
-      break;
-    }
-    case MODE_PALLET_LOCATE: {
       if (ret || !app_ptr) {
         break;
       }
@@ -448,107 +623,64 @@ void LxCamera::Run() {
       pub_pallet_->publish(result);
       break;
     }
-    case MODE_VISION_LOCATION: {
-      if (ret || !app_ptr) {
-        break;
-      }
-      LxLocation *val = (LxLocation *)app_ptr;
-      if (!val->status) {
-        geometry_msgs::msg::PoseStamped alg_val;
-        int64_t nanoseconds =
-            static_cast<int64_t>(one_frame->app_data.sensor_timestamp * 1e3);
-        alg_val.header.stamp.sec = nanoseconds / 1e9;
-        alg_val.header.stamp.nanosec = nanoseconds % static_cast<int64_t>(1e9);
-        alg_val.header.frame_id = "mrdvs";
-        auto qua_res = ToQuaternion(val->theta, 0, 0);
-        alg_val.pose.position.x = val->x;
-        alg_val.pose.position.y = val->y;
-        alg_val.pose.position.z = 0;
-        alg_val.pose.orientation.x = qua_res.x;
-        alg_val.pose.orientation.y = qua_res.y;
-        alg_val.pose.orientation.z = qua_res.z;
-        alg_val.pose.orientation.w = qua_res.w;
-        pub_location_->publish(alg_val);
-      }
-      break;
     }
-    case MODE_AVOID_OBSTACLE2: {
-      lx_camera_ros::msg::Obstacle result;
-      result.header.frame_id = "mrdvs";
-      int64_t nanoseconds =
-          static_cast<int64_t>(one_frame->app_data.sensor_timestamp * 1e3);
-      result.header.stamp.sec = nanoseconds / 1e9;
-      result.header.stamp.nanosec = nanoseconds % static_cast<int64_t>(1e9);
-      Check("GetObstacleIO", DcSpecialControl(handle_, "GetObstacleIO",
-                                              (void *)&result.io_output));
-      if (ret || !app_ptr) {
-        result.status = -1;
-        pub_obstacle_->publish(result);
-        break;
-      }
-      LxAvoidanceOutputN *lao = (LxAvoidanceOutputN *)app_ptr;
-      result.status = lao->state;
-      result.box_number = lao->number_box;
-      for (int i = 0; i < lao->number_box; i++) {
-        auto raw_box = lao->obstacleBoxs[i];
-        lx_camera_ros::msg::ObstacleBox box;
-        box.width = raw_box.width;
-        box.depth = raw_box.depth;
-        box.height = raw_box.height;
-        for (int t = 0; t < 3; t++)
-          box.center[t] = raw_box.center[t];
-        for (int t = 0; t < 9; t++)
-          box.rotation[t] = raw_box.pose.R[t];
-        for (int t = 0; t < 3; t++)
-          box.translation[t] = raw_box.pose.T[t];
-        result.box.push_back(box);
-      }
-      pub_obstacle_->publish(result);
-      break;
-    }
-    }
-    rclcpp::spin_some(node);
     rate.sleep();
   }
 }
 
 void LxCamera::ReadParam() {
-  this->declare_parameter<std::string>("ip", "0");
-  this->declare_parameter<std::string>("log_path", "./");
-  this->declare_parameter<int>("raw_param", 0);
-  this->declare_parameter<int>("is_xyz", 0);
-  this->declare_parameter<int>("is_rgb", 0);
-  this->declare_parameter<int>("is_amp", 0);
-  this->declare_parameter<int>("is_depth", 1);
-  this->declare_parameter<int>("lx_2d_binning", 0);
-  this->declare_parameter<int>("lx_2d_undistort", 0);
-  this->declare_parameter<int>("lx_2d_undistort_scale", 0);
-  this->declare_parameter<int>("lx_2d_auto_exposure", 0);
-  this->declare_parameter<int>("lx_2d_auto_exposure_value", 0);
-  this->declare_parameter<int>("lx_2d_exposure", 1000);
-  this->declare_parameter<int>("lx_2d_gain", 100);
-  this->declare_parameter<int>("lx_rgb_to_tof", 0);
-  this->declare_parameter<int>("lx_3d_binning", 0);
-  this->declare_parameter<int>("lx_mulit_mode", 0);
-  this->declare_parameter<int>("lx_3d_undistort", 0);
-  this->declare_parameter<int>("lx_3d_undistort_scale", 0);
-  this->declare_parameter<int>("lx_hdr", 0);
-  this->declare_parameter<int>("lx_3d_auto_exposure", 0);
-  this->declare_parameter<int>("lx_3d_auto_exposure_value", 0);
-  this->declare_parameter<int>("lx_3d_first_exposure", 0);
-  this->declare_parameter<int>("lx_3d_second_exposure", 0);
-  this->declare_parameter<int>("lx_3d_gain", 0);
-  this->declare_parameter<int>("lx_tof_unit", 0);
-  this->declare_parameter<int>("lx_min_depth", 0);
-  this->declare_parameter<int>("lx_max_depth", 6000);
-  this->declare_parameter<int>("lx_work_mode", 0);
-  this->declare_parameter<int>("lx_application", 0);
-  this->declare_parameter<float>("x", 0.0);
-  this->declare_parameter<float>("y", 0.0);
-  this->declare_parameter<float>("z", 0.0);
-  this->declare_parameter<float>("yaw", 0.0);
-  this->declare_parameter<float>("roll", 0.0);
-  this->declare_parameter<float>("pitch", 0.0);
+  auto declare_int = [this](const std::string &name, int default_value) {
+    if (!this->has_parameter(name)) {
+      this->declare_parameter<int>(name, default_value);
+    }
+  };
+  auto declare_float = [this](const std::string &name, float default_value) {
+    if (!this->has_parameter(name)) {
+      this->declare_parameter<float>(name, default_value);
+    }
+  };
+  auto declare_string =
+      [this](const std::string &name, const std::string &default_value) {
+        if (!this->has_parameter(name)) {
+          this->declare_parameter<std::string>(name, default_value);
+        }
+      };
+  declare_string("ip", "0");
+  declare_string("log_path", "./");
+  declare_int("raw_param", 0);
+  declare_int("is_xyz", 0);
+  declare_int("is_rgb", 0);
+  declare_int("is_amp", 0);
+  declare_int("is_depth", 1);
+  declare_int("lx_2d_binning", 0);
+  declare_int("lx_2d_undistort", 0);
+  declare_int("lx_2d_undistort_scale", 0);
+  declare_int("lx_2d_auto_exposure", 0);
+  declare_int("lx_2d_auto_exposure_value", 0);
+  declare_int("lx_2d_exposure", 1000);
+  declare_int("lx_2d_gain", 100);
+  declare_int("lx_rgb_to_tof", 0);
+  declare_int("lx_3d_binning", 0);
+  declare_int("lx_mulit_mode", 0);
+  declare_int("lx_3d_undistort", 0);
+  declare_int("lx_3d_undistort_scale", 0);
+  declare_int("lx_hdr", 0);
+  declare_int("lx_3d_auto_exposure", 0);
+  declare_int("lx_3d_auto_exposure_value", 0);
+  declare_int("lx_3d_first_exposure", 0);
+  declare_int("lx_3d_second_exposure", 0);
+  declare_int("lx_3d_gain", 0);
+  declare_int("lx_tof_unit", 0);
+  declare_int("lx_min_depth", 0);
+  declare_int("lx_max_depth", 6000);
+  declare_int("lx_work_mode", 0);
+  declare_int("lx_application", 0);
+  declare_float("x", 0.0f);
+  declare_float("y", 0.0f);
+  declare_float("z", 0.0f);
+  declare_float("yaw", 0.0f);
+  declare_float("roll", 0.0f);
+  declare_float("pitch", 0.0f);
 
   this->get_parameter<std::string>("ip", ip_);
   this->get_parameter<std::string>("log_path", log_path_);
@@ -757,12 +889,12 @@ int LxCamera::Check(std::string command, int state) {
   if (LX_SUCCESS == lx_state) {
     return lx_state;
   }
-  const char *m = DcGetErrorString(lx_state); // 获取错误信息
+  const char *m = DcGetErrorString(lx_state); // Get error message
   std_msgs::msg::String msg;
   setlocale(LC_ALL, "");
   msg.data = "#command: " + command +
              " #error code: " + std::to_string(lx_state) + " #report: " + m;
-  pub_error_->publish(msg); // 推送错误信息
+  pub_error_->publish(msg); // Publish error message
   RCLCPP_ERROR(this->get_logger(), "%s", msg.data.c_str());
   return state;
 }
