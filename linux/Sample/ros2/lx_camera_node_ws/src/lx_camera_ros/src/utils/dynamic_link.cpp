@@ -44,10 +44,10 @@ bool DynamicLink(DcLib* lib){
 	};
 
 	std::cout<<"Begin to dynamic link libLxCameraApi.so."<<std::endl;
-	for (const char** lib_path = lib_candidates; *lib_path != nullptr; ++lib_path) {
-		if ((*lib_path)[0] == '\0') continue;
-		std::cout<<"Try path: "<<*lib_path<<std::endl;
-		handle = dlopen(*lib_path, RTLD_LAZY);
+	for (const char* lib_path : lib_candidates) {
+		if (lib_path == nullptr || lib_path[0] == '\0') continue;
+		std::cout<<"Try path: "<<lib_path<<std::endl;
+		handle = dlopen(lib_path, RTLD_LAZY);
 		if (handle) break;
 		std::cout<<"Load lib failed: "<<dlerror()<<std::endl;
 	}
