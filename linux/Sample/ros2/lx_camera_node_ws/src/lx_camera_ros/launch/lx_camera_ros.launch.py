@@ -36,16 +36,16 @@ def generate_launch_description():
   return LaunchDescription([
     # Declare parameters; can be overridden via command line
     DeclareLaunchArgument('enable_rviz', default_value='true', description='Whether to launch rviz2'),
-    DeclareLaunchArgument('topic_rgb', default_value='LxCamera_Rgb', description='RGB image topic name'),
-    DeclareLaunchArgument('topic_rgb_info', default_value='LxCamera_RgbInfo', description='RGB camera info topic name'),
-    DeclareLaunchArgument('topic_amp', default_value='LxCamera_Amp', description='Amplitude image topic name'),
-    DeclareLaunchArgument('topic_depth', default_value='LxCamera_Depth', description='Depth image topic name'),
-    DeclareLaunchArgument('topic_tof_info', default_value='LxCamera_TofInfo', description='ToF camera info topic name'),
-    DeclareLaunchArgument('topic_error', default_value='LxCamera_Error', description='Error topic name'),
-    DeclareLaunchArgument('topic_pallet', default_value='LxCamera_Pallet', description='Pallet result topic name'),
-    DeclareLaunchArgument('topic_frame_rate', default_value='LxCamera_FrameRate', description='Frame-rate/temperature topic name'),
-    DeclareLaunchArgument('topic_cloud', default_value='LxCamera_Cloud', description='Point cloud topic name'),
-    DeclareLaunchArgument('topic_tf', default_value='LxCamera_TF', description='TF mirror topic name'),
+    DeclareLaunchArgument('topic_rgb', default_value='/fork_camera/detection/RGB', description='RGB image topic name'),
+    DeclareLaunchArgument('topic_rgb_info', default_value='/fork_camera/detection/RGB_info', description='RGB camera info topic name'),
+    DeclareLaunchArgument('topic_amp', default_value='/fork_camera/detection/AMP', description='Amplitude image topic name'),
+    DeclareLaunchArgument('topic_depth', default_value='/fork_camera/detection/DEPTH', description='Depth image topic name'),
+    DeclareLaunchArgument('topic_tof_info', default_value='/fork_camera/detection/TOF_info', description='ToF camera info topic name'),
+    DeclareLaunchArgument('topic_error', default_value='/fork_camera/detection/ERROR', description='Error topic name'),
+    DeclareLaunchArgument('topic_pallet', default_value='/fork_camera/detection/PALLET', description='Pallet result topic name'),
+    DeclareLaunchArgument('topic_frame_rate', default_value='/fork_camera/detection/FRAME_RATE', description='Frame-rate/temperature topic name'),
+    DeclareLaunchArgument('topic_cloud', default_value='/fork_camera/detection/CLOUD', description='Point cloud topic name'),
+    DeclareLaunchArgument('topic_tf', default_value='/fork_camera/detection/TF', description='TF mirror topic name'),
 
     # Start lx_camera_node
     Node(
