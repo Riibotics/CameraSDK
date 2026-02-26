@@ -118,6 +118,9 @@ target_link_libraries(${TARGET_NAME}
                       ${PCL_LIBRARIES} 
 					  "${cpp_typesupport_target}"
 					  ${LX_EXTRA_LIBS})
+set_target_properties(${TARGET_NAME} PROPERTIES
+	BUILD_RPATH "${LX_LIB_PATH}"
+	INSTALL_RPATH "\$ORIGIN/..")
 
 set(TARGET_NAME_LIFECYCLE lx_camera_lifecycle_node)
 add_executable(${TARGET_NAME_LIFECYCLE}
@@ -129,6 +132,9 @@ target_link_libraries(${TARGET_NAME_LIFECYCLE}
                       ${PCL_LIBRARIES}
 					  "${cpp_typesupport_target}"
 					  ${LX_EXTRA_LIBS})
+set_target_properties(${TARGET_NAME_LIFECYCLE} PROPERTIES
+	BUILD_RPATH "${LX_LIB_PATH}"
+	INSTALL_RPATH "\$ORIGIN/..")
 install(TARGETS ${TARGET_NAME} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
 install(TARGETS ${TARGET_NAME_LIFECYCLE} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
 install(FILES ${LX_LIB_PATH}/libLxDataProcess.so ${LX_LIB_PATH}/libLxCameraApi.so DESTINATION lib/)

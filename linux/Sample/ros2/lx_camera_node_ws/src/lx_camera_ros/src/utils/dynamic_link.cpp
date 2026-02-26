@@ -2,9 +2,28 @@
 #include <thread>
 #include <dlfcn.h>
 #include <cstdlib>
+#include <limits.h>
+#include <unistd.h>
 #include <iostream>
+#include <string>
 #include "dynamic_link.h"
 #define RETURN_FAILED(A) {std::cout<<"Load "<<A<<" failed!"<<std::endl;return false;}  
+
+static std::string GetInstalledLibPathFromExecutable() {
+	char exe_path[PATH_MAX] = {0};
+	ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+	if (len <= 0) return "";
+	exe_path[len] = '\0';
+
+	std::string exe_full_path(exe_path);
+	size_t last_slash = exe_full_path.find_last_of('/');
+	if (last_slash == std::string::npos) return "";
+
+	std::string exe_dir = exe_full_path.substr(0, last_slash);
+	// Executable is installed under: <prefix>/lib/lx_camera_ros/<node>
+	// SDK library is installed under: <prefix>/lib/libLxCameraApi.so
+	return exe_dir + "/../libLxCameraApi.so";
+}
 
 bool DynamicLink(DcLib* lib){
 	if(!is_dynamic){
@@ -14,9 +33,12 @@ bool DynamicLink(DcLib* lib){
 
 	void* handle = nullptr;
 	const char* env_lib_path = std::getenv("LX_CAMERA_API_LIB");
+	std::string installed_lib_path = GetInstalledLibPathFromExecutable();
+	const char* installed_lib_path_cstr = installed_lib_path.empty() ? nullptr : installed_lib_path.c_str();
 	const char* lib_candidates[] = {
 		env_lib_path,
 		LX_LIB,
+		installed_lib_path_cstr,
 		LX_LIB_FALLBACK,
 		nullptr
 	};
