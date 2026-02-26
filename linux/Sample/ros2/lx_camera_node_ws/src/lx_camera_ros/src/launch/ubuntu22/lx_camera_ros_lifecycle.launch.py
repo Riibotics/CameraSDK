@@ -14,6 +14,29 @@ import os
 def generate_launch_description():
   enable_rviz = LaunchConfiguration('enable_rviz')
   autostart = LaunchConfiguration('autostart')
+  topic_rgb = LaunchConfiguration('topic_rgb')
+  topic_rgb_info = LaunchConfiguration('topic_rgb_info')
+  topic_amp = LaunchConfiguration('topic_amp')
+  topic_depth = LaunchConfiguration('topic_depth')
+  topic_tof_info = LaunchConfiguration('topic_tof_info')
+  topic_error = LaunchConfiguration('topic_error')
+  topic_pallet = LaunchConfiguration('topic_pallet')
+  topic_frame_rate = LaunchConfiguration('topic_frame_rate')
+  topic_cloud = LaunchConfiguration('topic_cloud')
+  topic_tf = LaunchConfiguration('topic_tf')
+
+  camera_topic_remappings = [
+      ('LxCamera_Rgb', topic_rgb),
+      ('LxCamera_RgbInfo', topic_rgb_info),
+      ('LxCamera_Amp', topic_amp),
+      ('LxCamera_Depth', topic_depth),
+      ('LxCamera_TofInfo', topic_tof_info),
+      ('LxCamera_Error', topic_error),
+      ('LxCamera_Pallet', topic_pallet),
+      ('LxCamera_FrameRate', topic_frame_rate),
+      ('LxCamera_Cloud', topic_cloud),
+      ('LxCamera_TF', topic_tf),
+  ]
 
   camera_node = LifecycleNode(
       package="lx_camera_ros",
@@ -22,6 +45,7 @@ def generate_launch_description():
       name="lx_camera_node",
       output="screen",
       emulate_tty=True,
+      remappings=camera_topic_remappings,
       parameters=[
           {"ip": "192.168.100.82"},
           {"log_path": "/var/log/"},
@@ -97,6 +121,46 @@ def generate_launch_description():
           'autostart',
           default_value='false',
           description='Automatically configure and activate lifecycle node'),
+      DeclareLaunchArgument(
+          'topic_rgb',
+          default_value='LxCamera_Rgb',
+          description='RGB image topic name'),
+      DeclareLaunchArgument(
+          'topic_rgb_info',
+          default_value='LxCamera_RgbInfo',
+          description='RGB camera info topic name'),
+      DeclareLaunchArgument(
+          'topic_amp',
+          default_value='LxCamera_Amp',
+          description='Amplitude image topic name'),
+      DeclareLaunchArgument(
+          'topic_depth',
+          default_value='LxCamera_Depth',
+          description='Depth image topic name'),
+      DeclareLaunchArgument(
+          'topic_tof_info',
+          default_value='LxCamera_TofInfo',
+          description='ToF camera info topic name'),
+      DeclareLaunchArgument(
+          'topic_error',
+          default_value='LxCamera_Error',
+          description='Error topic name'),
+      DeclareLaunchArgument(
+          'topic_pallet',
+          default_value='LxCamera_Pallet',
+          description='Pallet result topic name'),
+      DeclareLaunchArgument(
+          'topic_frame_rate',
+          default_value='LxCamera_FrameRate',
+          description='Frame-rate/temperature topic name'),
+      DeclareLaunchArgument(
+          'topic_cloud',
+          default_value='LxCamera_Cloud',
+          description='Point cloud topic name'),
+      DeclareLaunchArgument(
+          'topic_tf',
+          default_value='LxCamera_TF',
+          description='TF mirror topic name'),
       camera_node,
       configure_event,
       activate_event,

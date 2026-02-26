@@ -26,6 +26,7 @@ endif ()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(diagnostic_updater REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -54,8 +55,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   ADD_LINTER_TESTS
 )
 
-set(dependencies rclcpp rclcpp_lifecycle lifecycle_msgs diagnostic_updater image_transport sensor_msgs
-				cv_bridge nav_msgs pcl_conversions tf2 tf2_ros)
+set(dependencies rclcpp rclcpp_lifecycle ament_index_cpp lifecycle_msgs diagnostic_updater image_transport sensor_msgs
+					cv_bridge nav_msgs pcl_conversions tf2 tf2_ros)
 add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY)
 ament_export_dependencies(rosidl_default_runtime)
 
