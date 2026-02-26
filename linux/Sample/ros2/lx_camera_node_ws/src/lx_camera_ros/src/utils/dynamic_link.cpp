@@ -1,6 +1,7 @@
 #include <math.h>
 #include <thread>
 #include <dlfcn.h>
+#include <cstdlib>
 #include <iostream>
 #include "dynamic_link.h"
 #define RETURN_FAILED(A) {std::cout<<"Load "<<A<<" failed!"<<std::endl;return false;}  
@@ -11,14 +12,30 @@ bool DynamicLink(DcLib* lib){
 		return true;
 	}
 
-	void* handle = lib->handle;
-	const char* lib_path = LX_LIB;
-	std::cout<<"Begin to dynamic link libLxCameraApi.so! path:" << lib_path <<std::endl;
-	// handle = dlopen("/opt/Lanxin-MRDVS/lib/libLxCameraApi.so", RTLD_LAZY);
-	handle = dlopen(lib_path, RTLD_LAZY);
-	while(!handle){
+	void* handle = nullptr;
+	const char* env_lib_path = std::getenv("LX_CAMERA_API_LIB");
+	const char* lib_candidates[] = {
+		env_lib_path,
+		LX_LIB,
+		LX_LIB_FALLBACK,
+		nullptr
+	};
+
+	std::cout<<"Begin to dynamic link libLxCameraApi.so."<<std::endl;
+	for (const char** lib_path = lib_candidates; *lib_path != nullptr; ++lib_path) {
+		if ((*lib_path)[0] == '\0') continue;
+		std::cout<<"Try path: "<<*lib_path<<std::endl;
+		handle = dlopen(*lib_path, RTLD_LAZY);
+		if (handle) break;
 		std::cout<<"Load lib failed: "<<dlerror()<<std::endl;
 	}
+
+	if (!handle) {
+		std::cout<<"Dynamic link libLxCameraApi.so failed!"<<std::endl;
+		return false;
+	}
+
+	lib->handle = handle;
 	std::cout<<"Dynamic link libLxCameraApi.so success!"<<std::endl;
 
 	lib->DcGetApiVersion = (const char*(*)())dlsym(handle, "DcGetApiVersion"); 
