@@ -1,9 +1,42 @@
 #include <math.h>
 #include <thread>
 #include <dlfcn.h>
+#include <cstdlib>
+#include <limits.h>
+#include <unistd.h>
+#include <exception>
 #include <iostream>
+#include <string>
+#include <ament_index_cpp/get_package_prefix.hpp>
 #include "dynamic_link.h"
 #define RETURN_FAILED(A) {std::cout<<"Load "<<A<<" failed!"<<std::endl;return false;}  
+
+static std::string GetInstalledLibPathFromAmentPrefix() {
+	try {
+		// This path is stable across normal install and most container/package layouts
+		// as long as the ROS environment is sourced.
+		const std::string pkg_prefix = ament_index_cpp::get_package_prefix("lx_camera_ros");
+		return pkg_prefix + "/lib/libLxCameraApi.so";
+	} catch (const std::exception&) {
+		return "";
+	}
+}
+
+static std::string GetInstalledLibPathFromExecutable() {
+	char exe_path[PATH_MAX] = {0};
+	ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+	if (len <= 0) return "";
+	exe_path[len] = '\0';
+
+	std::string exe_full_path(exe_path);
+	size_t last_slash = exe_full_path.find_last_of('/');
+	if (last_slash == std::string::npos) return "";
+
+	std::string exe_dir = exe_full_path.substr(0, last_slash);
+	// Executable is installed under: <prefix>/lib/lx_camera_ros/<node>
+	// SDK library is installed under: <prefix>/lib/libLxCameraApi.so
+	return exe_dir + "/../libLxCameraApi.so";
+}
 
 bool DynamicLink(DcLib* lib){
 	if(!is_dynamic){
@@ -11,14 +44,42 @@ bool DynamicLink(DcLib* lib){
 		return true;
 	}
 
-	void* handle = lib->handle;
-	const char* lib_path = LX_LIB;
-	std::cout<<"Begin to dynamic link libLxCameraApi.so! path:" << lib_path <<std::endl;
-	// handle = dlopen("/opt/Lanxin-MRDVS/lib/libLxCameraApi.so", RTLD_LAZY);
-	handle = dlopen(lib_path, RTLD_LAZY);
-	while(!handle){
+	void* handle = nullptr;
+	const char* env_lib_path = std::getenv("LX_CAMERA_API_LIB");
+	std::string ament_lib_path = GetInstalledLibPathFromAmentPrefix();
+	const char* ament_lib_path_cstr = ament_lib_path.empty() ? nullptr : ament_lib_path.c_str();
+	std::string installed_lib_path = GetInstalledLibPathFromExecutable();
+	const char* installed_lib_path_cstr = installed_lib_path.empty() ? nullptr : installed_lib_path.c_str();
+	const char* lib_candidates[] = {
+		env_lib_path,
+		ament_lib_path_cstr,
+		installed_lib_path_cstr,
+		LX_LIB_FALLBACK,
+		LX_LIB,
+		nullptr
+	};
+
+	std::cout<<"Begin to dynamic link libLxCameraApi.so."<<std::endl;
+	// Search order:
+	// 1) Explicit override (LX_CAMERA_API_LIB)
+	// 2) Package prefix from ament index (container/package friendly)
+	// 3) Executable-relative install path
+	// 4) Build-time fallback absolute path
+	// 5) Plain soname via system loader search path
+	for (const char* lib_path : lib_candidates) {
+		if (lib_path == nullptr || lib_path[0] == '\0') continue;
+		std::cout<<"Try path: "<<lib_path<<std::endl;
+		handle = dlopen(lib_path, RTLD_LAZY);
+		if (handle) break;
 		std::cout<<"Load lib failed: "<<dlerror()<<std::endl;
 	}
+
+	if (!handle) {
+		std::cout<<"Dynamic link libLxCameraApi.so failed!"<<std::endl;
+		return false;
+	}
+
+	lib->handle = handle;
 	std::cout<<"Dynamic link libLxCameraApi.so success!"<<std::endl;
 
 	lib->DcGetApiVersion = (const char*(*)())dlsym(handle, "DcGetApiVersion"); 

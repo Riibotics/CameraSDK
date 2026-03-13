@@ -25,13 +25,14 @@ Obstacle and localization sample components were removed from `Sample` to keep t
   - `pallet.sh`
   - `rate.sh`
 
-## Install SDK to `/opt`
+## Install SDK to `/opt` (Optional)
 
 ```bash
 ./install.sh
 ```
 
 This installs headers/libs to `/opt/Lanxin-MRDVS` and updates `LD_LIBRARY_PATH`.
+Use this only if you want system-wide SDK installation.
 
 ## Build C/C++ Samples
 
@@ -46,6 +47,13 @@ cmake --build build_sample_c -j
 cd Sample/ros2/lx_camera_node_ws
 ./build.sh
 ```
+
+`lx_camera_ros` now links against the bundled `SDK/` in this repository, so `./install.sh` is not required for ROS2 build/run.
+
+`build.sh` also tries to set socket buffer size automatically:
+- default: `10MB`
+- disable auto setup: `LX_AUTO_SET_SOCKET_BUFFER=0 ./build.sh`
+- change size: `LX_SOCKET_BUFFER_MB=20 ./build.sh`
 
 `build.sh` uses OpenMPI include hints when available:
 - `/usr/lib/x86_64-linux-gnu/openmpi/include`

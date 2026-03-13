@@ -3,18 +3,15 @@ set(CMAKE_CXX_STANDARD 14)
 project(lx_camera_ros)
 
 execute_process(COMMAND lsb_release -r COMMAND cut -f 2 OUTPUT_VARIABLE LX_DYNAMIC)
-string(STRIP ${LX_DYNAMIC} ${LX_DYNAMIC})
-if (${LX_DYNAMIC} VERSION_LESS_EQUAL "18.04")
+string(STRIP "${LX_DYNAMIC}" LX_DYNAMIC)
+if ("${LX_DYNAMIC}" VERSION_LESS_EQUAL "18.04")
+	set(LX_USE_DYNAMIC OFF)
 	message(STATUS "Use Normal Link: ${LX_DYNAMIC}")
-	SET(LAUNCH_DIR "${CMAKE_SOURCE_DIR}/src/launch/ubuntu18/")
 else()
+	set(LX_USE_DYNAMIC ON)
 	add_definitions(-DLX_DYNAMIC)
 	message(STATUS "Use Dnamic Link: ${LX_DYNAMIC}")
-	SET(LAUNCH_DIR "${CMAKE_SOURCE_DIR}/src/launch/ubuntu22/")
 endif ()
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/pallet.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/lx_camera_ros.launch.py ${CMAKE_SOURCE_DIR}/launch/)
-execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${LAUNCH_DIR}/lx_camera_ros_lifecycle.launch.py ${CMAKE_SOURCE_DIR}/launch/)
 
 if (NOT DEFINED CMAKE_SUPPRESS_DEVELOPER_WARNINGS)
     set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "No dev warnings")
@@ -24,6 +21,7 @@ endif ()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(diagnostic_updater REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -52,8 +50,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   ADD_LINTER_TESTS
 )
 
-set(dependencies rclcpp rclcpp_lifecycle lifecycle_msgs diagnostic_updater image_transport sensor_msgs
-				cv_bridge nav_msgs pcl_conversions tf2 tf2_ros)
+set(dependencies rclcpp rclcpp_lifecycle ament_index_cpp lifecycle_msgs diagnostic_updater image_transport sensor_msgs
+					cv_bridge nav_msgs pcl_conversions tf2 tf2_ros)
 add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY)
 ament_export_dependencies(rosidl_default_runtime)
 
@@ -61,11 +59,43 @@ include_directories(
         ${PROJECT_SOURCE_DIR}/src
 )
 #SDK
-include_directories(/opt/Lanxin-MRDVS/include)
-set(LX_LIB_PATH /opt/Lanxin-MRDVS/lib)
+get_filename_component(LX_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../SDK" ABSOLUTE)
+if(NOT EXISTS "${LX_SDK_ROOT}/include")
+	message(FATAL_ERROR "SDK include directory not found: ${LX_SDK_ROOT}/include")
+endif()
+
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" LX_CPU_ARCH)
+if(LX_CPU_ARCH MATCHES "x86_64|amd64")
+	set(LX_LIB_SUBDIR "linux_x64")
+elseif(LX_CPU_ARCH MATCHES "aarch64|arm64")
+	set(LX_LIB_SUBDIR "linux_aarch64")
+elseif(LX_CPU_ARCH MATCHES "^arm|armv7|armv6")
+	set(LX_LIB_SUBDIR "linux_arm32")
+else()
+	message(WARNING "Unknown architecture '${CMAKE_SYSTEM_PROCESSOR}', fallback to linux_x64")
+	set(LX_LIB_SUBDIR "linux_x64")
+endif()
+
+include_directories(${LX_SDK_ROOT}/include)
+set(LX_LIB_PATH "${LX_SDK_ROOT}/lib/${LX_LIB_SUBDIR}")
+set(LX_REQUIRED_LIBS
+	"${LX_LIB_PATH}/libLxCameraApi.so"
+	"${LX_LIB_PATH}/libLxDataProcess.so"
+)
+foreach(_lib IN LISTS LX_REQUIRED_LIBS)
+	if(NOT EXISTS "${_lib}")
+		message(FATAL_ERROR "SDK library not found: ${_lib}")
+	endif()
+endforeach()
 link_directories(${LX_LIB_PATH})
-set(LX_LIB ${LX_LIB_PATH}/libLxCameraApi.so)
-add_definitions(-DLX_LIB="${LX_LIB}")
+set(LX_SDK_CAMERA_API_LIB "${LX_LIB_PATH}/libLxCameraApi.so")
+add_definitions(-DLX_LIB="libLxCameraApi.so")
+add_definitions(-DLX_LIB_FALLBACK="${LX_SDK_CAMERA_API_LIB}")
+
+set(LX_EXTRA_LIBS ${CMAKE_DL_LIBS})
+if(NOT LX_USE_DYNAMIC)
+	list(APPEND LX_EXTRA_LIBS "${LX_SDK_CAMERA_API_LIB}")
+endif()
 #pcl
 find_package(PCL QUIET REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
@@ -88,7 +118,11 @@ rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_type
 ament_target_dependencies(${TARGET_NAME} ${dependencies} rosidl_default_runtime )
 target_link_libraries(${TARGET_NAME}
                       ${PCL_LIBRARIES} 
-					  "${cpp_typesupport_target}")
+					  "${cpp_typesupport_target}"
+					  ${LX_EXTRA_LIBS})
+set_target_properties(${TARGET_NAME} PROPERTIES
+	BUILD_RPATH "${LX_LIB_PATH}"
+	INSTALL_RPATH "\$ORIGIN/..")
 
 set(TARGET_NAME_LIFECYCLE lx_camera_lifecycle_node)
 add_executable(${TARGET_NAME_LIFECYCLE}
@@ -98,7 +132,11 @@ add_executable(${TARGET_NAME_LIFECYCLE}
 ament_target_dependencies(${TARGET_NAME_LIFECYCLE} ${dependencies} rosidl_default_runtime )
 target_link_libraries(${TARGET_NAME_LIFECYCLE}
                       ${PCL_LIBRARIES}
-					  "${cpp_typesupport_target}")
+					  "${cpp_typesupport_target}"
+					  ${LX_EXTRA_LIBS})
+set_target_properties(${TARGET_NAME_LIFECYCLE} PROPERTIES
+	BUILD_RPATH "${LX_LIB_PATH}"
+	INSTALL_RPATH "\$ORIGIN/..")
 install(TARGETS ${TARGET_NAME} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
 install(TARGETS ${TARGET_NAME_LIFECYCLE} EXPORT export_${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
 install(FILES ${LX_LIB_PATH}/libLxDataProcess.so ${LX_LIB_PATH}/libLxCameraApi.so DESTINATION lib/)
